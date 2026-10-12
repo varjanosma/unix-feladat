@@ -1,0 +1,49 @@
+<p><a routerLink="/products">&larr; Back to products</a></p>
+
+@if (product(); as p) {
+  <h1>{{ p.name }}</h1>
+  <p class="page-intro">{{ p.sku }} &middot; {{ p.productGroupName }}</p>
+
+  <div class="card">
+    <h2>Product</h2>
+    <dl class="detail">
+      <dt>Price</dt>
+      <dd>{{ p.price | number: '1.2-2' }}</dd>
+      <dt>Stock</dt>
+      <dd>{{ p.stockQuantity }}</dd>
+      <dt>Status</dt>
+      <dd>{{ p.isActive ? 'active' : 'inactive' }}</dd>
+      <dt>Created</dt>
+      <dd>{{ p.createdAtUtc | date: 'yyyy-MM-dd HH:mm' }}</dd>
+      <dt>Sold so far</dt>
+      <dd>{{ p.totalSoldQuantity }} pcs</dd>
+    </dl>
+  </div>
+
+  <div class="card">
+    <h2>Details (ProductInfo)</h2>
+    @if (p.manufacturer) {
+      <dl class="detail">
+        <dt>Manufacturer</dt>
+        <dd>{{ p.manufacturer }}</dd>
+        <dt>Description</dt>
+        <dd>{{ p.description }}</dd>
+        <dt>Warranty</dt>
+        <dd>{{ p.warrantyMonths }} months</dd>
+        <dt>Weight</dt>
+        <dd>{{ p.weightKg | number: '1.2-3' }} kg</dd>
+        <dt>Origin</dt>
+        <dd>{{ p.countryOfOrigin }}</dd>
+      </dl>
+    } @else {
+      <p>No details recorded for this product.</p>
+    }
+  </div>
+} @else if (notFound()) {
+  <h1>Product not found</h1>
+  <p class="page-intro">The API answered with HTTP 404.</p>
+} @else if (error(); as e) {
+  <p class="error">Could not load the product: {{ e }}</p>
+} @else {
+  <p>Loading...</p>
+}

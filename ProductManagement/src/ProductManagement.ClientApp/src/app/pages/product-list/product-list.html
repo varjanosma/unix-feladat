@@ -1,0 +1,66 @@
+<h1>Products</h1>
+<p class="page-intro">
+  Angular &rarr; Web (controller) &rarr; Bll (service) &rarr; Dal (EF Core) &rarr; in-memory database.
+</p>
+
+<div class="toolbar">
+  <select (change)="onGroupChange($any($event.target).value)">
+    <option value="">All groups</option>
+    @for (group of groups(); track group.id) {
+      <option [value]="group.id">{{ group.name }}</option>
+    }
+  </select>
+
+  <input
+    type="search"
+    placeholder="Search name or SKU"
+    (input)="onSearchChange($any($event.target).value)"
+  />
+
+  <button type="button" (click)="load()">Refresh</button>
+
+  @if (loading()) {
+    <span class="badge">Loading...</span>
+  }
+</div>
+
+@if (error(); as e) {
+  <p class="error">Could not load products: {{ e }}</p>
+} @else {
+  <table>
+    <thead>
+      <tr>
+        <th>SKU</th>
+        <th>Name</th>
+        <th>Group</th>
+        <th class="num">Price</th>
+        <th class="num">Stock</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      @for (product of products(); track product.id) {
+        <tr>
+          <td>{{ product.sku }}</td>
+          <td><a [routerLink]="['/products', product.id]">{{ product.name }}</a></td>
+          <td>{{ product.productGroupName }}</td>
+          <td class="num">{{ product.price | number: '1.2-2' }}</td>
+          <td class="num">{{ product.stockQuantity }}</td>
+          <td>
+            @if (!product.isActive) {
+              <span class="badge">inactive</span>
+            } @else if (product.stockQuantity === 0) {
+              <span class="badge warn">out of stock</span>
+            } @else {
+              <span class="badge ok">available</span>
+            }
+          </td>
+        </tr>
+      } @empty {
+        <tr>
+          <td colspan="6">No product matches the filter.</td>
+        </tr>
+      }
+    </tbody>
+  </table>
+}

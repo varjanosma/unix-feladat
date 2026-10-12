@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Data transfer objects: the shape of the API contract. A separate assembly on
+    purpose - it has no dependencies at all, so nothing can smuggle entities,
+    EF Core or business logic into the contract.
+  -->
+
+</Project>

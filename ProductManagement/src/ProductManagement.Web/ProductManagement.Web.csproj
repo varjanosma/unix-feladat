@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <!-- XML docs are emitted so NSwag can carry the summaries into the generated client. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);1591</NoWarn>
+
+    <!-- The Angular application is a sibling folder, not part of this project. -->
+    <ClientAppRoot>..\ProductManagement.ClientApp\</ClientAppRoot>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="NSwag.AspNetCore" Version="14.0.8" />
+
+    <!--
+      Not used at runtime (we stay on System.Text.Json). It is referenced only because
+      the NSwag CLI document generator loads this assembly while inspecting the app.
+    -->
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.NewtonsoftJson" Version="6.0.36" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ProductManagement.Bll\ProductManagement.Bll.csproj" />
+    <ProjectReference Include="..\ProductManagement.Transfer\ProductManagement.Transfer.csproj" />
+  </ItemGroup>
+
+  <!--
+    wwwroot is the Angular build output (see ProductManagement.ClientApp/angular.json),
+    so it is not in source control. On a fresh clone there is nothing to serve, and this
+    target builds the client once. Afterwards it is skipped, and the normal workflow is
+    `npm start` for development or `npm run build` for a production bundle.
+  -->
+  <Target Name="EnsureClientAppBuilt" BeforeTargets="Build" Condition="Exists('$(ClientAppRoot)package.json') AND !Exists('wwwroot\index.html')">
+    <Message Importance="high" Text="Angular output missing - building $(ClientAppRoot) (first build only)..." />
+    <Exec WorkingDirectory="$(ClientAppRoot)" Command="npm ci" Condition="!Exists('$(ClientAppRoot)node_modules')" />
+    <Exec WorkingDirectory="$(ClientAppRoot)" Command="npm run build" />
+  </Target>
+
+</Project>

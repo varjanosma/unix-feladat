@@ -1,0 +1,19 @@
+<Project>
+
+  <PropertyGroup>
+    <!-- Base target framework for the whole solution - change it here, once. -->
+    <TargetFramework>net6.0</TargetFramework>
+
+    <LangVersion>10.0</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+
+    <!--
+      net6.0 went out of support on 2024-11-12, so newer SDKs emit NETSDK1138 for it.
+      Suppressed here for the demo; in a real system the right answer is to upgrade
+      the target framework, not to silence the warning.
+    -->
+    <CheckEolTargetFramework>false</CheckEolTargetFramework>
+  </PropertyGroup>
+
+</Project>

@@ -1,0 +1,28 @@
+<h1>Backend health</h1>
+<p class="page-intro">
+  Proves that the whole chain works: Angular &rarr; Web &rarr; Bll &rarr; Dal.
+</p>
+
+<div class="card">
+  @if (health(); as h) {
+    <dl class="detail">
+      <dt>Status</dt>
+      <dd>{{ h.status }}</dd>
+      <dt>Runtime</dt>
+      <dd>.NET {{ h.runtime }}</dd>
+      <dt>Layers</dt>
+      <dd>{{ h.bllInfo }}</dd>
+      <dt>Server time (UTC)</dt>
+      <dd>{{ h.utcNow }}</dd>
+    </dl>
+  } @else if (error(); as e) {
+    <p class="error">
+      Could not reach the API: {{ e }}<br />
+      Is <code>ProductManagement.Web</code> running on <code>http://localhost:5080</code>?
+    </p>
+  } @else {
+    <p>Loading&hellip;</p>
+  }
+
+  <p><button type="button" (click)="check()">Refresh</button></p>
+</div>

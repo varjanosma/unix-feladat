@@ -1,0 +1,33 @@
+<h1>Product groups</h1>
+<p class="page-intro">
+  One group has many products &ndash; the count comes from a LINQ projection in the Bll layer.
+</p>
+
+@if (error(); as e) {
+  <p class="error">Could not load product groups: {{ e }}</p>
+} @else {
+  <table>
+    <thead>
+      <tr>
+        <th>Code</th>
+        <th>Name</th>
+        <th>Description</th>
+        <th class="num">Products</th>
+      </tr>
+    </thead>
+    <tbody>
+      @for (group of groups(); track group.id) {
+        <tr>
+          <td>{{ group.code }}</td>
+          <td>{{ group.name }}</td>
+          <td>{{ group.description }}</td>
+          <td class="num">{{ group.productCount }}</td>
+        </tr>
+      } @empty {
+        <tr>
+          <td colspan="4">No product group.</td>
+        </tr>
+      }
+    </tbody>
+  </table>
+}

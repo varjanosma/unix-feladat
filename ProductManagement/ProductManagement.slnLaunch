@@ -1,0 +1,22 @@
+[
+  {
+    "Name": "Web",
+    "Projects": [
+      {
+        "Path": "src\ProductManagement.Web\ProductManagement.Web.csproj",
+        "Action": "Start",
+        "DebugTarget": "http"
+      }
+    ]
+  },
+  {
+    "Name": "Web (Swagger)",
+    "Projects": [
+      {
+        "Path": "src\ProductManagement.Web\ProductManagement.Web.csproj",
+        "Action": "Start",
+        "DebugTarget": "http (swagger)"
+      }
+    ]
+  }
+]

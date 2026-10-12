@@ -1,0 +1,74 @@
+<p><a routerLink="/users">&larr; Back to users</a></p>
+
+@if (user(); as u) {
+  <h1>{{ u.fullName }}</h1>
+  <p class="page-intro">{{ u.userName }} &middot; {{ u.email }}</p>
+
+  <div class="card">
+    <dl class="detail">
+      <dt>Registered</dt>
+      <dd>{{ u.registeredAtUtc | date: 'yyyy-MM-dd HH:mm' }}</dd>
+      <dt>Purchases</dt>
+      <dd>{{ u.purchases?.length ?? 0 }}</dd>
+      <dt>Total spent</dt>
+      <dd>{{ u.totalSpent | number: '1.2-2' }}</dd>
+    </dl>
+  </div>
+
+  <p>
+    <a [routerLink]="['/purchases']" [queryParams]="{ userId: u.id }">
+      Show these purchases on the purchases page &rarr;
+    </a>
+  </p>
+
+  <h2>Purchase history</h2>
+
+  @for (purchase of u.purchases ?? []; track purchase.id) {
+    <div class="card">
+      <h2>
+        {{ purchase.purchasedAtUtc | date: 'yyyy-MM-dd HH:mm' }}
+        @if (purchase.note) {
+          <span class="badge">{{ purchase.note }}</span>
+        }
+      </h2>
+
+      <table>
+        <thead>
+          <tr>
+            <th>SKU</th>
+            <th>Product</th>
+            <th class="num">Qty</th>
+            <th class="num">Unit price</th>
+            <th class="num">Line total</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (item of purchase.items ?? []; track item.productId) {
+            <tr>
+              <td>{{ item.sku }}</td>
+              <td><a [routerLink]="['/products', item.productId]">{{ item.productName }}</a></td>
+              <td class="num">{{ item.quantity }}</td>
+              <td class="num">{{ item.unitPrice | number: '1.2-2' }}</td>
+              <td class="num">{{ item.lineTotal | number: '1.2-2' }}</td>
+            </tr>
+          }
+        </tbody>
+        <tfoot>
+          <tr>
+            <td colspan="4" class="num"><strong>Total</strong></td>
+            <td class="num"><strong>{{ purchase.total | number: '1.2-2' }}</strong></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  } @empty {
+    <p>This user has not bought anything yet.</p>
+  }
+} @else if (notFound()) {
+  <h1>User not found</h1>
+  <p class="page-intro">The API answered with HTTP 404.</p>
+} @else if (error(); as e) {
+  <p class="error">Could not load the user: {{ e }}</p>
+} @else {
+  <p>Loading&hellip;</p>
+}
