@@ -55,3 +55,18 @@ CodeCoverage/
 *.VisualState.xml
 TestResult.xml
 nunit-*.xml
+
+# Angular / Node
+node_modules/
+
+# NSwag intermediate output (regenerate with: dotnet nswag run nswag.json)
+openapi.json
+
+# Angular build output (generated into the ASP.NET Core host)
+ProductManagement/src/ProductManagement.Web/wwwroot/
+
+# Visual Studio IDE state (the base Dotnet.gitignore does not cover these)
+.vs/
+*.user
+*.suo
+*.slnLaunch.user
