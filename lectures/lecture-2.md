@@ -652,7 +652,7 @@ The **Testing** panel (flask icon) runs and debugs single tests.
 
 ## 9. Lab 1: JSON in → typed objects → JSON out
 
-The reference solution is published after the lab.
+Reference solution: [`lecture-2-lab/`](lecture-2-lab/Program.cs) (`dotnet run` in that folder).
 
 **Input**, `orders.json`:
 
@@ -719,7 +719,8 @@ async actually pays off, and where most things can go wrong.
 New project as in section 8: `dotnet new console -n PriceLab`, folders `Models/`, `Rates/`,
 `Processing/`.
 
-The reference solution is published after the lab.
+Reference solution: [`lecture-2-lab-2/`](lecture-2-lab-2/Program.cs)
+(`dotnet run` for live rates, `dotnet run -- offline` without network).
 
 **Input**, `prices.json` (HUF prices):
 

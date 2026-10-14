@@ -1,0 +1,6 @@
+[
+  { "sku": "VEH-001", "name": "Electric scooter", "priceHuf": 489000 },
+  { "sku": "TYR-001", "name": "Tyre 10\"",        "priceHuf": 17990 },
+  { "sku": "BRK-010", "name": "Brake pad set",    "priceHuf": 33990 },
+  { "sku": "HLM-002", "name": "Helmet",           "priceHuf": 24990 }
+]

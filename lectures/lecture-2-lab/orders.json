@@ -1,0 +1,7 @@
+[
+  { "orderId": "A-1", "sku": "VEH-001", "quantity": 2, "unitPrice": 1290.00 },
+  { "orderId": "A-2", "sku": "TYR-001", "quantity": 4, "unitPrice": 45.50 },
+  { "orderId": "A-3", "sku": "",        "quantity": 1, "unitPrice": 10.00 },
+  { "orderId": "A-4", "sku": "VEH-001", "quantity": -3, "unitPrice": 1290.00 },
+  { "orderId": "A-5", "sku": "BRK-010", "quantity": 1, "unitPrice": 89.90 }
+]
