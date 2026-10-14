@@ -5,6 +5,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The services are internal; the unit tests construct them directly. -->
+    <InternalsVisibleTo Include="ProductManagement.Bll.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\ProductManagement.Dal\ProductManagement.Dal.csproj" />
     <ProjectReference Include="..\ProductManagement.Transfer\ProductManagement.Transfer.csproj" />
   </ItemGroup>
