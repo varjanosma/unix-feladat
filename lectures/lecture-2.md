@@ -1,5 +1,61 @@
 # Session 2 — C# in practice: data, errors, asynchrony
 
+Each block: a short intro, then a task **in ProductManagement**. Try it in Swagger, then
+walk through it together. The tasks add new services and endpoints; the existing ones stay
+as they are. Reference solutions are published after the session.
+
+---
+
+## 0. Working in ProductManagement
+
+### 0.1 Run it
+
+```bash
+cd ProductManagement
+dotnet run --project src/ProductManagement.Web
+```
+
+Swagger UI: <http://localhost:5080/swagger>. Every new endpoint shows up there, with a
+**Try it out** button. The database is in-memory: a restart resets the data.
+
+Debug in VS Code: `F5` → choose **C#** and `ProductManagement.Web`; breakpoints with `F9`.
+
+### 0.2 Where does new code go?
+
+The same four steps for every task:
+
+| Step | Project / folder | Example |
+|---|---|---|
+| 1. Data that goes in or out | `ProductManagement.Transfer/Dtos/` | `LowStockItemDto.cs` (a `record`) |
+| 2. Contract + logic | `ProductManagement.Bll/Services/` | `IStockService.cs` (`public interface`) + `StockService.cs` (`internal sealed class`) |
+| 3. Registration | `ProductManagement.Bll/Extensions/ServiceCollectionExtensions.cs` | `services.AddScoped<IStockService, StockService>();` |
+| 4. HTTP endpoint | `ProductManagement.Web/Controllers/` | `StockController.cs` |
+
+One type per file. Copy the shape from what's already there:
+[`IProductService.cs`](../ProductManagement/src/ProductManagement.Bll/Services/IProductService.cs),
+[`ProductService.cs`](../ProductManagement/src/ProductManagement.Bll/Services/ProductService.cs),
+[`ProductsController.cs`](../ProductManagement/src/ProductManagement.Web/Controllers/ProductsController.cs).
+
+```csharp
+// Bll/Services/StockService.cs: the skeleton of every service
+internal sealed class StockService : IStockService
+{
+    private readonly ProductManagementDbContext _dbContext;
+
+    public StockService(ProductManagementDbContext dbContext)   // filled in by the framework
+    {
+        _dbContext = dbContext;
+    }
+}
+```
+
+New file in VS Code: right-click the folder → **New C#…** (C# Dev Kit) → *Class / Interface /
+Record*. It fills in the namespace.
+
+Tests: `dotnet test tests/ProductManagement.Bll.Tests` (or the **Testing** panel).
+
+---
+
 ## 1. Modern C# building blocks
 
 These four features appear on almost every line of LINQ and ASP.NET code, so they come
@@ -138,16 +194,27 @@ Console.WriteLine(a);                 // Product { Id = 1, Sku = VEH-001, ... } 
   the procedure?" debugging.
 - Use records for **data that travels**: DTOs, requests, results, JSON models.
 - The property syntax `{ get; init; }` gives the same immutability with named properties.
+  That's the style of the DTOs in the demo, e.g.
+  [`ProductDetailDto.cs`](../ProductManagement/src/ProductManagement.Transfer/Dtos/ProductDetailDto.cs).
 
-**In ProductManagement:** [`ProductDetailDto.cs`](../ProductManagement/src/ProductManagement.Transfer/Dtos/ProductDetailDto.cs),
-a `record` with `init`-only properties.
+### Task 1: DTOs for the product search
+
+In `ProductManagement.Transfer/Dtos/` (used in task 3):
+
+- `PagedResultDto<T>`: a **generic** record with `Items` (`IReadOnlyList<T>`), `Page`,
+  `PageSize`, `TotalCount`, and a computed `TotalPages`.
+- `ProductSort` enum: `Name`, `PriceAscending`, `PriceDescending`, `StockAscending`.
+- `ProductSearchRequest` record, every property `init` with a default: `ProductGroupId?`,
+  `Search?`, `MinPrice?`, `MaxPrice?`, `ActiveOnly = true`, `Sort = Name`, `Page = 1`,
+  `PageSize = 10`.
+
+**Done when** it builds.
 
 ---
 
-## 2. Collections: recap
+## 2. Collections
 
-Session 1 covered this as a lab ([`07_Collections.cs`](../ProductManagement/src/ProductManagement.Bll/Lectures01/07_Collections.cs)).
-Today we only need the decision rule: **pick the collection by the question you ask it.**
+Session 1 covered them as a lab. The rule: **pick the collection by the question you ask it.**
 
 | Question | Collection | Harbour equivalent |
 |---|---|---|
@@ -159,11 +226,31 @@ Today we only need the decision rule: **pick the collection by the question you 
 
 ```csharp
 var bySku = products.ToDictionary(p => p.Sku, StringComparer.OrdinalIgnoreCase);
-if (bySku.TryGetValue("veh-001", out var scooter)) { ... }   // O(1), not a scan
+if (bySku.TryGetValue("veh-001", out var car)) { ... }   // O(1), not a scan
+
+var boughtIds = new HashSet<int> { 3, 6, 7 };
+bool alreadyBought = boughtIds.Contains(product.Id);     // O(1)
 ```
 
-Return `IReadOnlyList<T>` from methods: the caller can't modify your internal list.
-Every service in the demo does this.
+`list.Contains(x)` inside a loop is a scan inside a scan, the `AScan`-in-a-loop problem.
+Put the keys into a `HashSet` or `Dictionary` first.
+
+### Task 2: Stock service
+
+New `IStockService` / `StockService` + `StockController` (`api/stock`):
+
+1. `GET /api/stock/low?threshold=10`: active products with `StockQuantity < threshold`,
+   **keyed by product group name**: `IReadOnlyDictionary<string, IReadOnlyList<LowStockItemDto>>`.
+   Load the rows with EF (`ToListAsync`), then build the dictionary with `TryGetValue`.
+2. `GET /api/stock/recommendations/{userId}`: products from the groups the user already
+   bought from, **that the user hasn't bought yet**, active and in stock, ordered by name.
+   Two `HashSet`s: bought product ids, bought group ids. Unknown user → `null` → **404**.
+
+**Done when:**
+
+- `threshold=5` → `"Vehicles": [VEH-002, VEH-001]`, `"Engine and service": [ENG-003]`
+- user `1` → `TYR-003`, `TYR-002`
+- user `999` → 404
 
 ---
 
@@ -174,8 +261,6 @@ on any collection, and on a database query too. Use **method syntax** only; igno
 SQL-like query syntax.
 
 ```csharp
-var products = new List<Product> { /* ... */ };
-
 var expensive = products.Where(p => p.Price > 1000m);            // filter
 var names     = products.Select(p => p.Name);                    // project
 var first     = products.First(p => p.Sku == "VEH-001");         // throws if none
@@ -183,20 +268,10 @@ var maybe     = products.FirstOrDefault(p => p.Sku == "XXX");    // null if none
 bool anyCheap = products.Any(p => p.Price < 10m);                // exists?
 int count     = products.Count(p => p.Price > 1000m);
 var sorted    = products.OrderBy(p => p.Name).ThenBy(p => p.Price);
+var page2     = sorted.Skip(10).Take(10);                        // paging
 
-// Chained: the typical shape
-List<string> result = products
-    .Where(p => p.Price > 1000m)
-    .OrderBy(p => p.Name)
-    .Select(p => $"{p.Sku} - {p.Name}")
-    .ToList();
-```
-
-`GroupBy`, briefly:
-
-```csharp
 var totalsByGroup = products
-    .GroupBy(p => p.GroupId)
+    .GroupBy(p => p.ProductGroupId)
     .Select(g => new { GroupId = g.Key, Count = g.Count(), Total = g.Sum(p => p.Price) });
 ```
 
@@ -216,16 +291,54 @@ var totalsByGroup = products
 | loop + `IF` + `AAdd` | `Where(...)` |
 | `ASort(a,,, {\| x, y \| ... })` | `OrderBy(...)` |
 
-**In ProductManagement:** [`ProductService.cs`](../ProductManagement/src/ProductManagement.Bll/Services/ProductService.cs)
-builds the query up conditionally (`if (search) query = query.Where(...)`), and nothing
-hits the database until `ToListAsync`. It's the same LINQ, but there EF translates it to SQL.
+### Against the database: where does the filtering happen?
+
+```csharp
+// ❌ Works, but loads the WHOLE table into memory, then filters in C#
+var all = await _dbContext.Products.ToListAsync(ct);
+var cheap = all.Where(p => p.Price < 100m).Take(10).ToList();
+
+// ✅ Build the query first; EF turns it into one SQL statement with WHERE / ORDER BY / OFFSET
+var cheap = await _dbContext.Products
+    .Where(p => p.Price < 100m)
+    .OrderBy(p => p.Name)
+    .Take(10)
+    .Select(p => new ProductListItemDto { Id = p.Id, Name = p.Name, Price = p.Price })  // only the needed columns
+    .ToListAsync(ct);
+```
+
+[`ProductService.GetListAsync`](../ProductManagement/src/ProductManagement.Bll/Services/ProductService.cs)
+builds the query conditionally: `if (search) query = query.Where(...)`.
+
+### Task 3a: Product search, written properly
+
+New `IProductSearchService.SearchAsync(ProductSearchRequest)` → `PagedResultDto<ProductListItemDto>`,
+endpoint `GET /api/product-search` with `[FromQuery] ProductSearchRequest request`.
+
+- Every filter only when it's set (`ActiveOnly`, group, search text, min/max price).
+- Sorting with a `switch` expression on `request.Sort`; add `ThenBy(p => p.Name)` for a stable order.
+- `TotalCount` with `CountAsync` **before** paging, then `Skip` / `Take` / `Select` / `ToListAsync`.
+- Clamp `PageSize` to 1–100: never trust the client with the size.
+
+**Done when** `?minPrice=50&sort=PriceDescending&pageSize=2&page=2` → `TYR-003`, `BRK-001`,
+`totalCount: 9`, `totalPages: 5`.
+
+### Task 3b: Sales statistics
+
+New `ISalesStatisticsService` + `StatisticsController` (`api/statistics`), both on
+`PurchaseItems` with `GroupBy`:
+
+- `GET /api/statistics/top-products?count=5`: quantity sold and revenue per product, by
+  quantity descending, then revenue descending.
+- `GET /api/statistics/revenue-by-group`: quantity and revenue per product group, highest
+  revenue first.
+
+**Done when** `count=2` → `TYR-001` (4 pcs, 436.00), `TYR-002` (4 pcs, 358.00), and the first
+group is `Vehicles` with 18900.00.
 
 ---
 
 ## 4. Exceptions
-
-Recap of session 1 ([`08_ErrorHandling.cs`](../ProductManagement/src/ProductManagement.Bll/Lectures01/08_ErrorHandling.cs)),
-then the one pattern that matters most for the rewrite.
 
 ```csharp
 try
@@ -243,19 +356,22 @@ finally
 }
 ```
 
-```csharp
-using var stream = File.OpenRead(path);   // disposed at the end of the scope, even on exception
-```
-
 A custom exception should carry **data**, not just text:
 
 ```csharp
-public sealed class ProductNotFoundException : Exception
+public sealed class InsufficientStockException : Exception
 {
-    public ProductNotFoundException(string sku) : base($"Product '{sku}' was not found.")
-        => Sku = sku;
+    public InsufficientStockException(string sku, int requested, int available)
+        : base($"Not enough stock for {sku}: requested {requested}, available {available}.")
+    {
+        Sku = sku;
+        Requested = requested;
+        Available = available;
+    }
 
     public string Sku { get; }
+    public int Requested { get; }
+    public int Available { get; }
 }
 ```
 
@@ -269,8 +385,6 @@ public sealed class ProductNotFoundException : Exception
 | Exceptions for expected cases (bad input row) | Slow and noisy. Return a result or failure list instead. |
 
 ### The "catch → 200 OK, just an info message" pattern
-
-This is the shape we want to get rid of:
 
 ```csharp
 // ❌ Every failure looks like success to the client and to monitoring
@@ -295,15 +409,48 @@ public async Task<ActionResult<ProductDetailDto>> GetById(int id, CancellationTo
     if (product is null)
         return NotFound();          // 404: a normal, expected outcome
     return Ok(product);             // 200
-    // A database failure is NOT caught here: one central handler turns it into a 500.
+    // A database failure is NOT caught here: it becomes a 500 on its own.
 }
 ```
 
-Why it matters: the Angular client, logs, monitoring and retries all decide based on the
-status code. A 200 with `ok = false` forces every caller to re-implement error detection.
+The Angular client, logs, monitoring and retries all decide based on the status code.
+A 200 with `ok = false` forces every caller to re-implement error detection.
 
-**In ProductManagement:** [`ProductsController.cs`](../ProductManagement/src/ProductManagement.Web/Controllers/ProductsController.cs) (`GetById`).
-The central handler (error middleware + `ProblemDetails`) is session 3.
+| Situation | Status code |
+|---|---|
+| OK / created | 200 / 201 |
+| The request is wrong (validation) | 400 |
+| No such thing | 404 |
+| Valid request, but the current state doesn't allow it (no stock) | 409 |
+| A service we depend on is down | 503 |
+| A bug, an unexpected failure | 500 (not caught, happens on its own) |
+
+### Task 4: Place an order
+
+New `IOrderService.PlaceOrderAsync(PlaceOrderRequest)` → id of the new purchase, and
+`OrdersController` with `POST /api/orders`.
+
+Request DTOs (`Transfer`): `PlaceOrderRequest { UserId, Note?, Lines }`,
+`OrderLineRequest { Sku, Quantity }`.
+
+1. **Validate everything first, collect all errors** into a list: no lines, quantity ≤ 0,
+   SKU listed twice, unknown user, unknown SKU, inactive product. If there's any, throw an
+   `OrderValidationException` with an `Errors` list.
+2. Then check the stock. Not enough → `InsufficientStockException(sku, requested, available)`.
+3. **Only now change anything:** decrease the stock, create the `Purchase` with its
+   `PurchaseItem`s (unit price = current product price), `SaveChangesAsync`.
+4. Controller: catch **only these two** exceptions → 400 / 409 with the data in the body.
+   Success → `CreatedAtAction(nameof(PurchasesController.GetById), "Purchases", new { id }, purchase)`.
+
+Hint: load the ordered products in one query, into a `Dictionary` keyed by SKU (section 2).
+
+**Done when:**
+
+| Body | Expected |
+|---|---|
+| `{"userId":2,"lines":[{"sku":"TYR-001","quantity":2}]}` | 201, purchase with total 218.00; TYR-001 stock goes 64 → 62 |
+| `{"userId":99,"lines":[{"sku":"NOPE","quantity":0}]}` | 400, three errors in the list |
+| `{"userId":1,"lines":[{"sku":"VEH-002","quantity":9}]}` | 409, `"available": 2`, nothing changed |
 
 ---
 
@@ -330,7 +477,7 @@ private static readonly JsonSerializerOptions JsonOptions = new()
     PropertyNamingPolicy = JsonNamingPolicy.CamelCase,   // "sku" instead of "Sku"
     PropertyNameCaseInsensitive = true,                  // accept both when reading
     WriteIndented = true,
-    Converters = { new JsonStringEnumConverter() },      // enums as "Active", not 1
+    Converters = { new JsonStringEnumConverter() },      // enums as "PriceAscending", not 1
 };
 ```
 
@@ -347,13 +494,13 @@ public sealed record OrderLine(
 with the path and line number in the message. Catch it **at the boundary** (where the file
 or request comes in) and turn it into a meaningful error.
 
-> ASP.NET Core does this for you on every request and response, with camelCase by default.
-> That's why it's worth knowing what happens under the hood.
+ASP.NET Core does this on every request and response (camelCase by default). That's
+why the controllers return objects, not JSON strings.
 
 ### 5.2 XML, briefly
 
-Relevant for the invoicing web service. `XmlSerializer` needs a **public parameterless
-constructor and settable properties**, so a positional record won't work here.
+Relevant for the invoicing web service. `XmlSerializer` needs a **public class with a
+parameterless constructor and settable properties**, so a positional record won't work here.
 
 ```csharp
 using System.Xml.Serialization;
@@ -363,15 +510,56 @@ public class InvoiceXml
 {
     [XmlAttribute("number")] public string Number { get; set; } = "";
     [XmlElement("Total")]    public decimal Total  { get; set; }
+
+    [XmlArray("Lines"), XmlArrayItem("Line")]
+    public List<InvoiceLineXml> Lines { get; set; } = new();
 }
 
-var serializer = new XmlSerializer(typeof(InvoiceXml));
+var serializer = new XmlSerializer(typeof(InvoiceXml));   // create once, reuse
 using var writer = new StringWriter();
 serializer.Serialize(writer, new InvoiceXml { Number = "INV-1", Total = 1290m });
 ```
 
 When a supplier provides an XSD, generate the classes (`xsd.exe` / `dotnet-svcutil`)
 instead of writing them by hand.
+
+### Task 5: Export
+
+New `IExportService` + `ExportController` (`api/export`):
+
+1. `GET /api/export/catalog`: the active products as a **downloadable JSON file**:
+   camelCase, indented, enums as strings. In the controller: `File(bytes, "application/json", "catalog.json")`.
+2. `GET /api/export/invoices/{purchaseId}`: the invoice of a purchase as **XML**,
+   `File(bytes, "application/xml")`. Unknown purchase → 404. Reuse `IPurchaseService.GetByIdAsync`
+   for the data.
+
+Two small details make the XML clean: `XmlWriterSettings { Indent = true, Encoding = new UTF8Encoding(false) }`,
+and an empty `XmlSerializerNamespaces` so there are no `xmlns:xsi` / `xmlns:xsd` attributes.
+
+**Done when** purchase `1` gives:
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<Invoice number="INV-000001" currency="EUR">
+  <IssueDate>2025-07-02</IssueDate>
+  <Customer>
+    <Name>Novák János</Name>
+    <Email>janos.novak@example.com</Email>
+  </Customer>
+  <Lines>
+    <Line sku="TYR-001">
+      <Description>Summer tyre 205/55 R16</Description>
+      <Quantity>4</Quantity>
+      <UnitPrice>109.00</UnitPrice>
+      <LineTotal>436.00</LineTotal>
+    </Line>
+    <Line sku="ENG-001">
+      ...
+    </Line>
+  </Lines>
+  <Total>448.90</Total>
+</Invoice>
+```
 
 ---
 
@@ -397,15 +585,6 @@ string text = File.ReadAllText(path);
 
 // Asynchronous: the thread is released while the disk works
 string text = await File.ReadAllTextAsync(path);
-```
-
-```csharp
-public async Task<IReadOnlyList<Order>> LoadOrdersAsync(string path, CancellationToken ct)
-{
-    await using var stream = File.OpenRead(path);
-    var orders = await JsonSerializer.DeserializeAsync<List<Order>>(stream, JsonOptions, ct);
-    return orders ?? new List<Order>();
-}
 ```
 
 - `Task` = "an operation that finishes later". `Task<T>` = "…and then gives a `T`".
@@ -438,183 +617,218 @@ This is by design. **Async all the way.** Don't stop halfway with `.Result`.
 ### 6.5 CancellationToken
 
 The way to say "stop, nobody needs the result any more", e.g. when the user closes the
-browser tab during a 30-second report.
+browser tab during a 30-second report. ASP.NET fills in the token of the request:
 
 ```csharp
 [HttpGet]
 public async Task<ActionResult<IReadOnlyList<ProductListItemDto>>> GetList(
-    [FromQuery] string? search, CancellationToken cancellationToken)   // ASP.NET fills it in
+    [FromQuery] string? search, CancellationToken cancellationToken)
 {
     var products = await _productService.GetListAsync(null, search, cancellationToken);
     return Ok(products);
 }
 ```
 
-The rule is simple: **accept a `CancellationToken` as the last parameter and pass it to every
-async call you make.** The libraries (EF, HttpClient, file APIs) do the actual cancelling.
+The rule: **accept a `CancellationToken` as the last parameter and pass it to every async
+call you make.** The libraries (EF, HttpClient, file APIs) do the actual cancelling.
 
-**In ProductManagement:** follow the token from
-[`ProductsController.GetList`](../ProductManagement/src/ProductManagement.Web/Controllers/ProductsController.cs)
-→ [`ProductService.GetListAsync`](../ProductManagement/src/ProductManagement.Bll/Services/ProductService.cs)
-→ `ToListAsync(cancellationToken)`.
-
----
-
-## 7. Interfaces and abstraction
-
-### 7.1 Contract vs implementation
-
-An interface says **what** something can do, not **how**.
+A **timeout** is just a cancellation. To add your own limit on top of the caller's token:
 
 ```csharp
-public interface IOrderSource
+using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+timeout.CancelAfter(TimeSpan.FromSeconds(5));       // whichever fires first wins
+
+try
 {
-    Task<IReadOnlyList<Order>> LoadAsync(CancellationToken ct = default);
+    return await _http.GetFromJsonAsync<RateResponse>(url, timeout.Token);
 }
-
-internal sealed class JsonFileOrderSource : IOrderSource
+catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
 {
-    private readonly string _path;
-    public JsonFileOrderSource(string path) => _path = path;
-
-    public async Task<IReadOnlyList<Order>> LoadAsync(CancellationToken ct = default)
-    {
-        await using var stream = File.OpenRead(_path);
-        return await JsonSerializer.DeserializeAsync<List<Order>>(stream, JsonOptions, ct)
-               ?? new List<Order>();
-    }
+    // OUR timeout fired, not the client's: that's a failure, not a cancellation
+    throw new ExchangeRateUnavailableException("The rate service did not answer in 5 seconds.");
 }
 ```
 
-The code that **uses** orders depends only on `IOrderSource`:
+### Task 6: Prices in another currency
 
-```csharp
-public sealed class OrderReport
-{
-    private readonly IOrderSource _source;
-    public OrderReport(IOrderSource source) => _source = source;   // passed in, not created
-
-    public async Task<decimal> TotalAsync(CancellationToken ct = default)
-    {
-        var orders = await _source.LoadAsync(ct);
-        return orders.Sum(o => o.Quantity * o.UnitPrice);
-    }
-}
-```
-
-Tomorrow the orders can come from a database or an HTTP API. `OrderReport` doesn't change.
-
-This connects to session 1: the **interface is `public`**, and the **implementation is
-`internal sealed`**. Other projects see the contract, never the details.
-
-### 7.2 Why this makes testing possible
-
-Because `OrderReport` receives an `IOrderSource`, a test can give it a fake one: no
-files, no database.
-
-```csharp
-public class OrderReportTests
-{
-    private sealed class FakeOrderSource : IOrderSource
-    {
-        private readonly IReadOnlyList<Order> _orders;
-        public FakeOrderSource(params Order[] orders) => _orders = orders;
-        public Task<IReadOnlyList<Order>> LoadAsync(CancellationToken ct = default)
-            => Task.FromResult(_orders);
-    }
-
-    [Fact]
-    public async Task TotalAsync_sums_quantity_times_price()
-    {
-        // Arrange
-        var report = new OrderReport(new FakeOrderSource(
-            new Order("A-1", "VEH-001", 2, 100m),
-            new Order("A-2", "TYR-001", 3, 10m)));
-
-        // Act
-        var total = await report.TotalAsync();
-
-        // Assert
-        Assert.Equal(230m, total);
-    }
-}
-```
-
-- xUnit: `[Fact]` = one test, `Assert.*` = the check. Run with `dotnet test`.
-- Hand-written fakes are enough to start with. Libraries like **NSubstitute / Moq**
-  generate them, so mention them but don't start there.
-
-### 7.3 A preview of DI
-
-"Who creates the `JsonFileOrderSource` and passes it in?" In ASP.NET Core it's the
-**dependency injection container**: you register *interface → implementation* once.
-
-```csharp
-services.AddScoped<IProductService, ProductService>();
-```
-
-**In ProductManagement:** [`IProductService.cs`](../ProductManagement/src/ProductManagement.Bll/Services/IProductService.cs)
-(public contract), [`ProductService.cs`](../ProductManagement/src/ProductManagement.Bll/Services/ProductService.cs)
-(`internal sealed` implementation),
-[`ServiceCollectionExtensions.cs`](../ProductManagement/src/ProductManagement.Bll/Extensions/ServiceCollectionExtensions.cs)
-(registration). Lifetimes and the details are covered in session 3.
-
----
-
-## 8. Lab setup: creating a project in VS Code
-
-Do this once per lab. Every lab is a small console app in its own folder.
-
-**Prerequisites:** .NET SDK (`dotnet --list-sdks`) and the **C# Dev Kit** extension in VS Code.
-
-### 8.1 Create the project
-
-In the VS Code terminal (`` Ctrl+` ``), from the folder where you keep your lab work:
-
-```bash
-dotnet new console -n OrdersLab      # creates OrdersLab/ with OrdersLab.csproj + Program.cs
-cd OrdersLab
-code .                               # open the folder in VS Code (or File → Open Folder)
-dotnet run                           # prints "Hello, World!" → the setup works
-```
-
-`Program.cs` uses **top-level statements**: there's no `class Program` / `Main`, the file
-body *is* `Main`. Keep it short: it only wires things together.
-
-### 8.2 Where does the code go?
-
-One type per file, folders by role. The namespace follows the folder:
+Product prices are stored in EUR. New endpoint `GET /api/prices/{productId}?currency=HUF`
+with today's ECB rate from a free API (no key needed):
 
 ```text
-OrdersLab/
-├── OrdersLab.csproj
-├── Program.cs                  ← entry point: read → process → write, nothing else
-├── orders.json                 ← input data
-├── Models/                     ← records: Order.cs, OrderFailure.cs, ...
-├── Sources/                    ← IOrderSource.cs, JsonFileOrderSource.cs, the custom exception
-└── Processing/                 ← OrderProcessor.cs: validation + LINQ
+GET https://api.frankfurter.dev/v1/latest?base=EUR&symbols=HUF
+→ { "amount": 1.0, "base": "EUR", "date": "2026-10-14", "rates": { "HUF": 363.3 } }
 ```
+
+1. `IExchangeRateProvider.GetRateAsync(from, to, ct)` → `ExchangeRate(From, To, Rate, Date)` record,
+   in `Bll/Rates/`.
+2. `FrankfurterRateProvider`: gets an `HttpClient` in the constructor, calls
+   `GetFromJsonAsync`, has its own **5-second timeout** (snippet above). Translates the
+   failures into **our own** exceptions:
+   - API answers 404 (`HttpRequestException` with `StatusCode == NotFound`) → `UnknownCurrencyException`
+   - any other `HttpRequestException` / `JsonException` / our timeout → `ExchangeRateUnavailableException`
+3. Register it as a singleton, with one `HttpClient` for the whole application:
+
+   ```csharp
+   services.AddSingleton<IExchangeRateProvider>(_ => new FrankfurterRateProvider(
+       new HttpClient { BaseAddress = new Uri("https://api.frankfurter.dev/v1/") }));
+   ```
+
+4. `IPriceService.GetPriceAsync(productId, currency)` → `ProductPriceDto?`: `await` the
+   database, then `await` the rate. **EUR → no HTTP call at all.** Round with
+   `Math.Round(x, 2, MidpointRounding.AwayFromZero)`.
+5. `PricesController`: no product → 404, `UnknownCurrencyException` → 400,
+   `ExchangeRateUnavailableException` → 503.
+
+**Done when:** `1?currency=HUF` → the Golf in forints; `currency=XXX` → 400; `currency=EUR` → no
+call to the API (breakpoint!); `999` → 404. Try `TimeSpan.FromMilliseconds(1)` as the timeout → 503.
+
+---
+
+## 7. Interfaces and tests
+
+An interface says **what** something can do, not **how**. `PriceService` only knows
+`IExchangeRateProvider`; it has no idea there's an HTTP call behind it:
 
 ```csharp
-// Models/Order.cs
-namespace OrdersLab.Models;          // file-scoped namespace: no extra { } indentation
+internal sealed class PriceService : IPriceService
+{
+    private readonly IExchangeRateProvider _rateProvider;   // the contract, not FrankfurterRateProvider
 
-public sealed record Order(string OrderId, string Sku, int Quantity, decimal UnitPrice);
+    public PriceService(ProductManagementDbContext dbContext, IExchangeRateProvider rateProvider) { ... }
+}
 ```
+
+- The **interface is `public`**, the **implementation is `internal sealed`** (session 1):
+  other projects see the contract, never the details.
+- Which implementation is used is decided in one place: `ServiceCollectionExtensions`.
+- And a test can pass in a **fake**: no network, same answer every time.
 
 ```csharp
-// Program.cs
-using OrdersLab.Models;              // import the namespaces you use
-using OrdersLab.Processing;
+internal sealed class FakeExchangeRateProvider : IExchangeRateProvider
+{
+    public bool IsDown { get; init; }
+    public int CallCount { get; private set; }
+
+    public Task<ExchangeRate> GetRateAsync(string from, string to, CancellationToken ct = default)
+    {
+        CallCount++;
+        if (IsDown) throw new ExchangeRateUnavailableException("Fake: down.");
+        return Task.FromResult(new ExchangeRate(from, to, 400m, "2026-01-01"));
+    }
+}
+
+public class PriceServiceTests
+{
+    [Fact]
+    public async Task Price_is_converted_with_the_rate_of_the_provider()
+    {
+        // Arrange
+        using var db = TestDb.Create();
+        var service = new PriceService(db, new FakeExchangeRateProvider());
+
+        // Act
+        var price = await service.GetPriceAsync(productId: 6, currency: "HUF");   // oil filter, 12.90 EUR
+
+        // Assert
+        Assert.Equal(5_160m, price!.Price);
+    }
+}
 ```
 
-New file: right-click the folder in the Explorer → **New File…** → `Order.cs`.
-(With C# Dev Kit, **New C#…** → *Class / Interface / Record* fills in the namespace for you.)
+- xUnit: `[Fact]` = one test, `Assert.*` = the check.
+- Hand-written fakes are enough to start with. **NSubstitute / Moq** generate them.
 
-### 8.3 The input file must be next to the exe
+### Task 7: Unit tests
 
-`dotnet run` runs from `bin/Debug/net10.0/`, not from the project folder. Tell the build to
-copy the data file there, in the `.csproj`:
+In `tests/ProductManagement.Bll.Tests/Lecture02/`:
+
+1. The services are `internal`, so let the test project see them, in `ProductManagement.Bll.csproj`:
+
+   ```xml
+   <ItemGroup>
+     <InternalsVisibleTo Include="ProductManagement.Bll.Tests" />
+   </ItemGroup>
+   ```
+
+2. A fresh in-memory database with the seed data for **every** test, so tests can't affect each other:
+
+   ```csharp
+   internal static class TestDb
+   {
+       public static ProductManagementDbContext Create()
+       {
+           var options = new DbContextOptionsBuilder<ProductManagementDbContext>()
+               .UseInMemoryDatabase(Guid.NewGuid().ToString())
+               .Options;
+
+           var dbContext = new ProductManagementDbContext(options);
+           dbContext.Database.EnsureCreated();
+           return dbContext;
+       }
+   }
+   ```
+
+3. Tests to write:
+   - price conversion with the fake (above);
+   - `currency: "EUR"` with `IsDown = true` still works, and `CallCount` is 0;
+   - placing an order with too much quantity throws `InsufficientStockException` **and
+     changes nothing** (purchase count and stock are the same as before);
+   - your choice: one for task 2 or 3.
+
+**Done when** `dotnet test tests/ProductManagement.Bll.Tests` is green.
+
+---
+
+## 8. Combined task: checkout
+
+Walk through this one together. It uses everything above.
+
+`POST /api/orders/checkout?currency=HUF`, body: a `PlaceOrderRequest` (task 4). Response:
+
+```json
+{
+  "purchaseId": 7,
+  "totalEur": 12.90,
+  "currency": "HUF",
+  "rate": 363.3,
+  "total": 4686.57,
+  "invoiceUrl": "/api/export/invoices/7"
+}
+```
+
+1. New `ICheckoutService` / `CheckoutService`. It gets `IOrderService`, `IPurchaseService` and
+   `IExchangeRateProvider` in the constructor: **it composes services**, it doesn't
+   re-implement them.
+2. Order of steps: **get the rate first, then place the order.** If the rate service is
+   down, no order may be created.
+3. Total = purchase total × rate, rounded. `invoiceUrl` points to the export from task 5.
+4. Controller: 200 / 400 (validation, unknown currency) / 409 (stock) / 503 (rates).
+5. Test: with `FakeExchangeRateProvider { IsDown = true }` the call throws and the number of
+   purchases doesn't change.
+
+Then follow one request in the debugger, end to end:
+
+```text
+Swagger → OrdersController.Checkout → CheckoutService
+            → IExchangeRateProvider (HTTP)  → OrderService (EF → in-memory DB)
+            → PurchaseService → back as CheckoutResultDto → JSON
+```
+
+Discuss: what happens with each failure in the chain, and where it turns into a status code?
+
+---
+
+## 9. Homework (optional)
+
+Two small console apps, outside ProductManagement, for anyone who wants more practice.
+
+**Setup:**
+
+```bash
+dotnet new console -n OrdersLab && cd OrdersLab && dotnet run
+```
+
+Put the input file next to the exe, in the `.csproj`:
 
 ```xml
 <ItemGroup>
@@ -622,39 +836,10 @@ copy the data file there, in the `.csproj`:
 </ItemGroup>
 ```
 
-…and read it with `Path.Combine(AppContext.BaseDirectory, "orders.json")`.
+…and read it with `Path.Combine(AppContext.BaseDirectory, "orders.json")`. Folders by role
+(`Models/`, `Sources/`, `Processing/`), `Program.cs` only wires things together.
 
-### 8.4 Run and debug
-
-| What | How |
-|---|---|
-| Run | `dotnet run` in the terminal |
-| Run with arguments | `dotnet run -- offline` (everything after `--` goes to `args`) |
-| Debug | `F5` → choose **C#** the first time; breakpoint with `F9`, step with `F10` / `F11` |
-| Build errors | **Problems** panel (`Ctrl+Shift+M`) |
-
-### 8.5 Optional: a test project for the stretch goals
-
-```bash
-cd ..                                            # next to OrdersLab/, not inside it
-dotnet new xunit -n OrdersLab.Tests
-dotnet add OrdersLab.Tests reference OrdersLab   # the tests can now see OrdersLab's public types
-dotnet new sln -n OrdersLab                      # a solution, so VS Code / Test Explorer sees both
-dotnet sln add OrdersLab OrdersLab.Tests
-dotnet test
-```
-
-Tests only see `public` types. To test an `internal` class, add
-`<InternalsVisibleTo Include="OrdersLab.Tests" />` to `OrdersLab.csproj` (session 1).
-The **Testing** panel (flask icon) runs and debugs single tests.
-
----
-
-## 9. Lab 1: JSON in → typed objects → JSON out
-
-The reference solution is published after the lab.
-
-**Input**, `orders.json`:
+### Lab A: JSON in → typed objects → JSON out
 
 ```json
 [
@@ -666,164 +851,29 @@ The reference solution is published after the lab.
 ]
 ```
 
-**Model:**
+1. Read the file **asynchronously**, behind an `IOrderSource` interface.
+2. Empty SKU or quantity ≤ 0 → a failure list (an expected case: no exception).
+3. Valid orders per SKU with `GroupBy` + `Sum`, by revenue descending.
+4. Write `summary.json`: `{ "totals": [...], "failures": [...] }`.
+5. Missing file / bad JSON: not swallowed; wrapped in a custom exception with the path.
 
-```csharp
-public sealed record Order(string OrderId, string Sku, int Quantity, decimal UnitPrice);
-public sealed record OrderFailure(string OrderId, string Reason);
-public sealed record SkuTotal(string Sku, int Quantity, decimal Revenue);
-public sealed record OrderSummary(IReadOnlyList<SkuTotal> Totals, IReadOnlyList<OrderFailure> Failures);
-```
+### Lab B: Price list with live rates
 
-**Steps:**
-
-1. `IOrderSource` + `JsonFileOrderSource`: read the file **asynchronously** with a
-   `CancellationToken` (section 6, 7).
-2. Validate each order: empty SKU or quantity ≤ 0 goes to the failure list. Don't throw for
-   a bad row; it's an expected case (section 4).
-3. Summarize the valid orders per SKU with LINQ: `GroupBy` + `Sum`, ordered by revenue
-   descending (section 3).
-4. Write `summary.json` (camelCase, indented) asynchronously (section 5).
-5. A missing input file or malformed JSON is **not** swallowed. Let it surface with a clear
-   message (wrap it in a custom exception with the file path).
-
-**Expected output (shape):**
-
-```json
-{
-  "totals": [
-    { "sku": "VEH-001", "quantity": 2, "revenue": 2580.00 },
-    { "sku": "TYR-001", "quantity": 4, "revenue": 182.00 },
-    { "sku": "BRK-010", "quantity": 1, "revenue": 89.90 }
-  ],
-  "failures": [
-    { "orderId": "A-3", "reason": "SKU is empty" },
-    { "orderId": "A-4", "reason": "Quantity must be positive" }
-  ]
-}
-```
-
-**Stretch goals:**
-
-- One xUnit test for the summary logic with a `FakeOrderSource` (section 7.2).
-- Also export the totals as XML (section 5.2).
-- Break the code on purpose: replace `await` with `.Result`, or remove the `CancellationToken`.
-  Discuss what changes.
+Same shape, HUF prices from `prices.json`, converted to EUR and USD with
+`https://api.frankfurter.dev/v1/latest?base=HUF&symbols=EUR,USD`. A 5-second timeout on
+the whole run, a fake provider for offline use (`dotnet run -- offline`), and every failure
+(404, no network, bad JSON, timeout) ends in a clear message and a non-zero exit code.
 
 ---
 
-## 10. Lab 2: Price list with live exchange rates
-
-Same shape as lab 1, but the slow part is now the **network**, not a file. This is where
-async actually pays off, and where most things can go wrong.
-New project as in section 8: `dotnet new console -n PriceLab`, folders `Models/`, `Rates/`,
-`Processing/`.
-
-The reference solution is published after the lab.
-
-**Input**, `prices.json` (HUF prices):
-
-```json
-[
-  { "sku": "VEH-001", "name": "Electric scooter", "priceHuf": 489000 },
-  { "sku": "TYR-001", "name": "Tyre 10\"",        "priceHuf": 17990 },
-  { "sku": "BRK-010", "name": "Brake pad set",    "priceHuf": 33990 },
-  { "sku": "HLM-002", "name": "Helmet",           "priceHuf": 24990 }
-]
-```
-
-**Rates:** a free ECB-based API, no key needed:
-
-```text
-GET https://api.frankfurter.dev/v1/latest?base=HUF&symbols=EUR,USD
-
-{ "amount": 1.0, "base": "HUF", "date": "2026-10-13", "rates": { "EUR": 0.00274, "USD": 0.00307 } }
-```
-
-**Model:**
-
-```csharp
-public sealed record PriceItem(string Sku, string Name, decimal PriceHuf);
-public sealed record ExchangeRates(string Base, string Date, Dictionary<string, decimal> Rates);
-public sealed record ConvertedPrice(string Sku, string Name, decimal PriceHuf, decimal PriceEur, decimal PriceUsd);
-public sealed record PriceList(string RateDate, IReadOnlyList<ConvertedPrice> Items);
-
-public interface IExchangeRateProvider
-{
-    Task<ExchangeRates> GetRatesAsync(string baseCurrency, IReadOnlyList<string> targets, CancellationToken ct = default);
-}
-```
-
-**Steps:**
-
-1. Read `prices.json` asynchronously (as in lab 1).
-2. Implement `IExchangeRateProvider` twice (section 7):
-   - `FrankfurterRateProvider`: calls the API with `HttpClient.GetFromJsonAsync`;
-   - `FixedRateProvider`: a fake with hard-coded rates, no network.
-3. Put a **5-second timeout** on the whole run: `new CancellationTokenSource(TimeSpan.FromSeconds(5))`,
-   and pass the token everywhere (section 6.5). A timeout is just a cancellation.
-4. Convert the prices with LINQ `Select`, looking up the rate in the dictionary. Use
-   `decimal` and round explicitly: `Math.Round(x, 2, MidpointRounding.AwayFromZero)`.
-5. Write `pricelist.json`.
-6. Error handling (section 4). Each failure ends in a clear message and a non-zero exit code,
-   never "carry on with a zero rate":
-
-   | Failure | How to try it | Expected handling |
-   |---|---|---|
-   | API returns 404/500 | `base=XXX` | `HttpRequestException` → wrapped in a custom exception |
-   | No network / DNS error | wrong host name | same as above |
-   | Response is not the expected JSON | wrong path | `JsonException` → wrapped |
-   | Too slow | timeout of `TimeSpan.FromMilliseconds(1)` | `OperationCanceledException`, caught **only at the top** |
-   | Currency missing from response | ask only for `EUR` | custom exception, not `KeyNotFoundException` |
-
-**Expected output (shape):**
-
-```json
-{
-  "rateDate": "2026-10-13",
-  "items": [
-    { "sku": "BRK-010", "name": "Brake pad set", "priceHuf": 33990, "priceEur": 93.13, "priceUsd": 104.35 }
-  ]
-}
-```
-
-**Stretch goals:**
-
-- xUnit test for the conversion with `FixedRateProvider`: rounding, missing currency.
-- Replace one `await` with `.Result` and discuss: it still works in a console app, so why is
-  it dangerous in ASP.NET? (section 6.4)
-- Export the price list as XML for the invoicing system (section 5.2).
-
-> In ASP.NET Core you don't `new` an `HttpClient`: it comes from `IHttpClientFactory`
-> through DI (session 3). That's why the provider gets it through the constructor here.
-
----
-
-## 11. Homework
-
-A small processor, in the same shape as the lab but on your own input:
-
-- Input: a JSON (or CSV) file, e.g. a price list, a stock movement list, or something
-  TL-like.
-- Read it into **records**, validate it, produce a summary with LINQ, write a JSON output.
-- Requirements:
-  - invalid rows end up in a **failure report**, never silently dropped;
-  - all file I/O is `async`, with a `CancellationToken` passed through;
-  - reading sits behind an **interface**;
-  - **at least one xUnit test** using a fake implementation.
-- Bring it to session 3. That's where it becomes an HTTP endpoint.
-
----
-
-## 12. What to take away
+## 10. What to take away
 
 - Records for data, `IReadOnlyList<T>` for return values: immutable by default.
-- LINQ = extension methods + lambdas. `FirstOrDefault` when it can be missing, `Any` to check existence.
+- Pick the collection by the question: key lookup → `Dictionary`, membership → `HashSet`.
+- LINQ = extension methods + lambdas. Against the database: filter and page **before** `ToListAsync`.
 - Never swallow exceptions. Expected outcomes are results or status codes; unexpected ones propagate.
 - An error is never a `200 OK` with an info message.
 - `System.Text.Json` for JSON; catch `JsonException` at the boundary. XML only where an external system requires it.
 - Async is for I/O, not parallelism. `await` all the way up; no `.Result`, no `async void`.
-- Accept a `CancellationToken` and pass it down.
+- Accept a `CancellationToken` and pass it down. A timeout is just a cancellation.
 - Depend on interfaces; that's what makes code swappable and testable.
-
-**Next session:** HTTP and ASP.NET Core: controllers, DTOs, dependency injection in detail, error middleware with `ProblemDetails`, configuration.
